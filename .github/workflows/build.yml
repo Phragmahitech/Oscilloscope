@@ -1,0 +1,89 @@
+name: Build VST3
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  SCOPE_PATH: build/Oscilloscope_artefacts/Release/VST3/Oscilloscope.vst3
+  SYNC_PATH: build/OscilloscopeSync_artefacts/Release/VST3/Oscilloscope Sync.vst3
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-15-intel
+          - name: Windows
+            os: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DOSC_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build --config Release --target Oscilloscope_VST3 OscilloscopeSync_VST3 OscilloscopeEngineTests --parallel 4
+
+      - name: Test du moteur
+        run: ctest --test-dir build -C Release -R engine --output-on-failure
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          lipo -archs "$SCOPE_PATH/Contents/MacOS/Oscilloscope"
+          lipo -archs "$SYNC_PATH/Contents/MacOS/Oscilloscope Sync"
+          for p in "$SCOPE_PATH" "$SYNC_PATH"; do
+            codesign --force --deep --sign - "$p"
+            codesign --verify --deep --strict "$p"
+          done
+          mkdir dist
+          cp -R "$SCOPE_PATH" "$SYNC_PATH" dist/
+          (cd dist && zip -r -q ../Oscilloscope-macOS.zip .)
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          mkdir dist
+          cp -R "$SCOPE_PATH" "$SYNC_PATH" dist/
+          (cd dist && 7z a -tzip ../Oscilloscope-Windows.zip . > /dev/null)
+
+      - name: Upload
+        uses: actions/upload-artifact@v7
+        with:
+          path: Oscilloscope-${{ matrix.name }}.zip
+          archive: false
+          if-no-files-found: error
+
+      - name: Validation pluginval
+        run: |
+          curl -sSfL -o pluginval.zip "https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_${{ runner.os }}.zip"
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            unzip -q -o pluginval.zip
+            PLUGINVAL="pluginval.app/Contents/MacOS/pluginval"
+          else
+            7z x -y pluginval.zip > /dev/null
+            PLUGINVAL="./pluginval.exe"
+          fi
+          "$PLUGINVAL" --strictness-level 10 --validate-in-process --validate "$SCOPE_PATH"
+          "$PLUGINVAL" --strictness-level 10 --validate-in-process --validate "$SYNC_PATH"
