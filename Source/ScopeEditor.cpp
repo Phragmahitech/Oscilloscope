@@ -568,12 +568,13 @@ ScopeEditor::ScopeEditor (ScopeProcessor& p)
     timeNext.onClick = [this] { setChoice (ScopeProcessor::timeId, processor.getTimeIndex() + 1); };
     timeValue.onClick = [this]
     {
+        juce::Component::SafePointer<ScopeEditor> safePointer (this);   // (hors de la lambda interne : MSVC)
         juce::PopupMenu m;
         const auto& names = ScopeProcessor::timeNames();
         for (int i = 0; i < names.size(); ++i)
             m.addItem (i + 1, names[i], true, i == processor.getTimeIndex());
         m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (timeValue),
-                         [safe = juce::Component::SafePointer<ScopeEditor> (this)] (int r)
+                         [safe = safePointer] (int r)
                          {
                              if (safe != nullptr && r > 0)
                                  safe->setChoice (ScopeProcessor::timeId, r - 1);

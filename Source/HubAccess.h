@@ -14,6 +14,17 @@
 
 namespace osc
 {
+    /** « pid:adresse en hexadécimal ». */
+    inline bool parse (const char* text, unsigned long long& pid, unsigned long long& address)
+    {
+        const juce::String s (text);
+        if (! s.containsChar (':'))
+            return false;
+        pid = (unsigned long long) s.upToFirstOccurrenceOf (":", false, false).getLargeIntValue();
+        address = (unsigned long long) s.fromFirstOccurrenceOf (":", false, false).getHexValue64();
+        return true;
+    }
+
     inline Hub* getProcessHub()
     {
         static Hub* cached = nullptr;   // par bibliothèque (créé sur le fil des messages)
@@ -29,7 +40,7 @@ namespace osc
         char value[128] = {};
         unsigned long long storedPid = 0, address = 0;
         if (readProcessVariable (variable, value, sizeof (value))
-            && std::sscanf (value, "%llu:%llx", &storedPid, &address) == 2 && storedPid == pid && address != 0)
+            && parse (value, storedPid, address) && storedPid == pid && address != 0)
         {
             auto* h = reinterpret_cast<Hub*> ((uintptr_t) address);
             if (h->magic == hubMagic && h->layoutVersion == hubLayoutVersion)
