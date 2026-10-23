@@ -93,7 +93,7 @@ namespace osc
     class LagEstimator
     {
     public:
-        float minPeak = 0.02f;
+        float minPeak = 0.12f;    // mesuré : bonnes réponses >= 0,147 (saturation) ; fausses (filtres raides) <= 0,107
         float minRatio = 2.0f;   // deux musiques sans rapport : au plus 1,4 ; un sinus pur : 1,0
         float silence = 1.0e-6f;    // RMS sous laquelle on ne mesure rien (-120 dBFS)
         float regularisation = 1.0e-7f;  // presque blanchi : les aigus très atténués d'un son filtré comptent autant que le reste

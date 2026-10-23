@@ -174,19 +174,21 @@ namespace
             { "saturation", [] (const std::vector<float>& v) { return distort (v, 6.0f); }, 0 },
             { "réverbération", [sr] (const std::vector<float>& v) { return reverb (v, sr); }, 0 },
             { "EQ + saturation + réverb", [sr] (const std::vector<float>& v) { return reverb (distort (biquad (v, sr, 1, 60.0, 0.707), 3.0f), sr); }, 0 },
-            // 24 dB/oct à 150 Hz : on accepte de ne rien trouver (la dernière valeur est gardée), pas de se tromper de plus de 2
-            { "passe-bas 150 Hz 24 dB/oct", [sr] (const std::vector<float>& v) { return biquad (biquad (v, sr, 0, 150.0, 0.707), sr, 0, 150.0, 0.707); }, -2 },
+            // Passe-bas raides : on accepte de ne rien trouver (la dernière valeur est gardée), jamais une valeur fausse
+            { "passe-bas 150 Hz 24 dB/oct", [sr] (const std::vector<float>& v) { return biquad (biquad (v, sr, 0, 150.0, 0.707), sr, 0, 150.0, 0.707); }, -100 },
+            { "passe-bas 300 Hz 24 dB/oct", [sr] (const std::vector<float>& v) { return biquad (biquad (v, sr, 0, 300.0, 0.707), sr, 0, 300.0, 0.707); }, -100 },
         };
 
         for (auto& c : cases)
         {
             for (int lag : { 0, 333, 2048, 12000 })
+            for (size_t offset : { (size_t) 0, (size_t) 9000, (size_t) 21000 })
             {
                 const auto y = c.f (delayed (x, lag));
-                const auto e = estimateOn (x, y, sr, at, maxLag);
+                const auto e = estimateOn (x, y, sr, at - offset, maxLag);
                 if (c.tolerance < 0)   // cas difficile : pas de résultat, ou un résultat juste à |tolérance| près
                 {
-                    CHECK (! e.valid || std::abs (e.lag - lag) <= -c.tolerance, "%s, retard %d : faux résultat %d", c.name, lag, e.lag);
+                    CHECK (! e.valid || e.lag == lag, "%s, retard %d : faux résultat %d", c.name, lag, e.lag);
                     continue;
                 }
                 CHECK (e.valid && std::abs (e.lag - lag) <= c.tolerance, "%s, retard %d : trouvé %d (valide %d, pic %.3f, rapport %.2f)",

@@ -14,7 +14,7 @@ Réglages de la fenêtre :
 - **CHANNEL** : MID, L, R, SIDE. **GAIN** : ±24 dB (double-clic : 0). **FREEZE** : fige l'image.
 - Liste : clic sur la pastille = couleur ; œil = afficher / masquer ; double-clic sur le nom = renommer ; clic sur la ligne de latence = compensation AUTO ou OFF.
 
-Limites connues : un passe-bas très raide et très bas (24 dB/oct vers 150 Hz) entre le Sync et l'Oscilloscope peut empêcher la mesure (la dernière valeur est gardée) ; un son parfaitement périodique (sinus pur) ne permet pas de mesurer (retard ambigu) ; les instances doivent tourner dans le même processus (normal dans Live).
+Limites connues : un passe-bas très raide (24 dB/oct sous 300 Hz environ) entre le Sync et l'Oscilloscope peut empêcher la mesure (la dernière valeur est gardée) ; un son parfaitement périodique (sinus pur) ne permet pas de mesurer (retard ambigu) ; les instances doivent tourner dans le même processus (normal dans Live).
 
 JUCE 8, C++17, CMake. Le moteur (`Source/Hub.h`, `Tap.h`, `LatencyFinder.h`, `Trace.h`) n'utilise pas JUCE. Les polices (Michroma, IBM Plex Mono, licence OFL : voir `Assets/`) sont téléchargées à la configuration depuis `google/fonts` à un commit fixe et vérifiées par SHA-256.
 
