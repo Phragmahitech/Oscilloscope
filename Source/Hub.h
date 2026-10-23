@@ -251,8 +251,16 @@ namespace osc
                     void* r = osAllocate ((size_t) ringSize * sizeof (std::atomic<float>));
                     if (l == nullptr || r == nullptr)
                         return -1;      // (ce qui a pu être alloué reste perdu : rare, et sans danger)
-                    s.ringL = new (l) std::atomic<float>[(size_t) ringSize];
-                    s.ringR = new (r) std::atomic<float>[(size_t) ringSize];
+                    // (élément par élément : un new[] de placement peut réserver un en-tête selon le compilateur)
+                    auto* al = static_cast<std::atomic<float>*> (l);
+                    auto* ar = static_cast<std::atomic<float>*> (r);
+                    for (int64_t j = 0; j < ringSize; ++j)
+                    {
+                        new (al + j) std::atomic<float> (0.0f);
+                        new (ar + j) std::atomic<float> (0.0f);
+                    }
+                    s.ringL = al;
+                    s.ringR = ar;
                 }
                 else
                 {
