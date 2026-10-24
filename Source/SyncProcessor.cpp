@@ -91,34 +91,10 @@ SyncEditor::~SyncEditor() = default;
 
 juce::StringArray SyncEditor::describe() const
 {
-    juce::StringArray out;
     auto* hub = processor.getHub();
-    const int me = processor.getSlotIndex();
-    if (hub == nullptr || me < 0)
-    {
-        out.add ("NOT CONNECTED");
-        return out;
-    }
-
-    const uint32_t generation = hub->slots[me].generation.load();
-    for (int i = 0; i < osc::maxSlots; ++i)
-    {
-        const auto& s = hub->slots[i];
-        if (! s.isAlive() || s.getKind() != osc::Kind::scope)
-            continue;
-        if (s.pairedSlot.load() != me || s.pairedGeneration.load() != generation)
-            continue;
-
-        const auto state = (osc::LatencyState) s.latencyState.load();
-        juce::String status;
-        if (state == osc::LatencyState::measuring)
-            status = "MEASURING...";
-        else
-            status = osc::latencyText (s.latency.load(), s.sampleRate.load());
-        out.add (osc::displayName (*hub, i) + "|" + status);
-    }
-
-    return out;
+    if (hub == nullptr || processor.getSlotIndex() < 0)
+        return { "NOT CONNECTED" };
+    return osc::describeFollowers (*hub, processor.getSlotIndex());
 }
 
 void SyncEditor::timerCallback()

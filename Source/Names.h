@@ -43,4 +43,28 @@ namespace osc
             t << juce::String (juce::CharPointer_UTF8 (" \xc2\xb7 ")) << juce::String (1000.0 * samples / sampleRate, samples * 1000.0 / sampleRate < 10.0 ? 2 : 1) << " ms";
         return t;
     }
+
+    /** Les Oscilloscope qui suivent ce Sync : « nom|latence compensée » (fenêtres des deux Sync). */
+    inline juce::StringArray describeFollowers (const Hub& hub, int syncIndex)
+    {
+        juce::StringArray out;
+        if (syncIndex < 0)
+            return out;
+
+        const uint32_t generation = hub.slots[syncIndex].generation.load();
+        for (int i = 0; i < maxSlots; ++i)
+        {
+            const auto& s = hub.slots[i];
+            if (! s.isAlive() || s.getKind() != Kind::scope)
+                continue;
+            if (s.pairedSlot.load() != syncIndex || s.pairedGeneration.load() != generation)
+                continue;
+
+            const auto state = (LatencyState) s.latencyState.load();
+            const juce::String status = state == LatencyState::measuring ? juce::String ("MEASURING...")
+                                                                         : latencyText (s.latency.load(), s.sampleRate.load());
+            out.add (displayName (hub, i) + "|" + status);
+        }
+        return out;
+    }
 }

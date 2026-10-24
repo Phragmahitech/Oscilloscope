@@ -386,6 +386,26 @@ namespace
             CHECK (latencyOf (w, a) == 24000 && stateOf (w, a) == LatencyState::noSignal, "silence : %d, état %d", latencyOf (w, a), (int) stateOf (w, a));
         }
 
+        // Sync Instrument : la latence de l'instrument chargé s'ajoute à la mesure, et suit ses changements
+        std::printf ("Latence de l'instrument (Sync Instrument)\n");
+        {
+            World w3;
+            Track k;
+            w3.addTrack (k, music (w3.sr, 6.0, 77), 512);
+            w3.hub->slots[k.syncIndex].sourceLatency.store (110);
+            w3.run ({ &k }, 2.0);
+            CHECK (latencyOf (w3, k) == 622 && w3.hub->slots[k.scopeIndex].pairedSourceLatency.load() == 110,
+                   "512 + 110 : %d", latencyOf (w3, k));
+            w3.hub->slots[k.syncIndex].sourceLatency.store (2000);   // l'instrument change de latence
+            w3.run ({ &k }, 0.5);
+            CHECK (latencyOf (w3, k) == 2512, "512 + 2000 : %d", latencyOf (w3, k));
+            // Sync Instrument retiré : on garde le total
+            w3.hub->release (k.syncIndex);
+            k.syncIndex = -1;
+            w3.run ({ &k }, 1.0);
+            CHECK (latencyOf (w3, k) == 2512, "Sync retiré : %d", latencyOf (w3, k));
+        }
+
         // Compensation coupée à la main
         w.hub->slots[a.scopeIndex].setFlag (flags::latencyOff, true);
         w.run ({ &a }, 0.5);

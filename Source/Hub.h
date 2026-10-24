@@ -19,14 +19,14 @@
 namespace osc
 {
     constexpr uint64_t hubMagic = 0x5048524f53434831ull;   // "PHROSCH1"
-    constexpr uint32_t hubLayoutVersion = 1;
+    constexpr uint32_t hubLayoutVersion = 2;
     constexpr int maxSlots = 64;
     constexpr int ringBits = 21;                            // 2^21 échantillons : 43 s à 48 kHz, 10,9 s à 192 kHz
     constexpr int64_t ringSize = int64_t (1) << ringBits;
     constexpr int64_t ringMask = ringSize - 1;
     constexpr int nameWords = 8;                            // 64 octets de nom (63 caractères + 0)
 
-    enum class Kind : uint32_t { none = 0, scope = 1, sync = 2 };
+    enum class Kind : uint32_t { none = 0, scope = 1, sync = 2 };   // sync : Oscilloscope Sync ou Oscilloscope Sync Instrument
 
     namespace flags
     {
@@ -91,6 +91,11 @@ namespace osc
         std::atomic<int32_t> latency { 0 };         // échantillons retranchés à l'affichage
         std::atomic<int32_t> latencyState { 0 };
         std::atomic<int32_t> pairedSlot { -1 };
+        std::atomic<int32_t> pairedSourceLatency { 0 };  // part de la latence venant de l'instrument du Sync suivi
+
+        // Écrit par Oscilloscope Sync Instrument : latence de l'instrument chargé dedans (son signal est déjà en retard d'autant)
+        std::atomic<int32_t> sourceLatency { 0 };
+        std::atomic<uint64_t> sourceName[nameWords] {};   // nom de l'instrument chargé
         std::atomic<uint32_t> pairedGeneration { 0 };
 
         std::atomic<uint64_t> name[nameWords] {};       // nom donné dans l'interface (vide = automatique)
@@ -289,6 +294,9 @@ namespace osc
                 s.latencyState.store ((int32_t) LatencyState::searching, std::memory_order_relaxed);
                 s.pairedSlot.store (-1, std::memory_order_relaxed);
                 s.pairedGeneration.store (0, std::memory_order_relaxed);
+                s.pairedSourceLatency.store (0, std::memory_order_relaxed);
+                s.sourceLatency.store (0, std::memory_order_relaxed);
+                Slot::writeText (s.sourceName, "");
                 Slot::writeText (s.name, "");
                 Slot::writeText (s.trackName, "");
                 s.colour.store (k == Kind::scope ? pickColourLocked (i) : 0xffffffffu, std::memory_order_relaxed);

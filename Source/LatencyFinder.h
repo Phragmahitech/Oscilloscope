@@ -277,6 +277,8 @@ namespace osc
                 tracker.clear();
                 pairedIndex = -1;
                 held = 0;
+                heldSource = 0;
+                scope.pairedSourceLatency.store (0, std::memory_order_relaxed);
                 return;
             }
 
@@ -338,8 +340,6 @@ namespace osc
                 misses = 0;
                 if (bestIndex != pairedIndex)
                 {
-                    if (tracker.known)
-                        held = tracker.current;
                     pairedIndex = bestIndex;
                     pairedGeneration = hub.slots[bestIndex].generation.load();
                     tracker.clear();
@@ -352,9 +352,20 @@ namespace osc
                 ++misses;   // du son, mais rien de net : après plusieurs échecs, on cherche à nouveau parmi tous les Sync
             }
 
+            // Latence totale = mesurée après le Sync + celle de l'instrument chargé dans le Sync (0 pour un Sync simple)
+            int source = heldSource;
+            if (pairedIndex >= 0)
+                source = hub.slots[pairedIndex].sourceLatency.load (std::memory_order_relaxed);
+            if (tracker.known)
+            {
+                held = tracker.current;
+                heldSource = source;
+            }
+
             scope.pairedSlot.store (pairedIndex, std::memory_order_relaxed);
             scope.pairedGeneration.store (pairedGeneration, std::memory_order_relaxed);
-            scope.latency.store (tracker.known ? tracker.current : held, std::memory_order_relaxed);
+            scope.pairedSourceLatency.store (tracker.known ? source : heldSource, std::memory_order_relaxed);
+            scope.latency.store (tracker.known ? tracker.current + source : held + heldSource, std::memory_order_relaxed);
 
             LatencyState state;
             if (pairedIndex < 0)            state = LatencyState::searching;
@@ -372,8 +383,6 @@ namespace osc
         /** Le Sync suivi a disparu : on garde la dernière latence (les plugins sont sans doute toujours là) jusqu'à une nouvelle mesure. */
         void forget (Slot&)
         {
-            if (tracker.known)
-                held = tracker.current;
             pairedIndex = -1;
             pairedGeneration = 0;
             misses = 0;
@@ -443,7 +452,8 @@ namespace osc
         int pairedIndex = -1;
         uint32_t pairedGeneration = 0;
         int misses = 0;
-        int held = 0;
+        int held = 0;           // dernière mesure retenue (après le Sync)
+        int heldSource = 0;     // et latence de l'instrument à ce moment-là
         uint32_t runCount = 0;
     };
 }

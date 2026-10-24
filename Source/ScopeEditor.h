@@ -18,6 +18,7 @@ struct TrackInfo
     bool active = false;
     bool hidden = false;
     int latency = 0;
+    int sourceLatency = 0;       // part venant de l'instrument (Oscilloscope Sync Instrument)
     osc::LatencyState latencyState = osc::LatencyState::searching;
     juce::String pairedName;     // nom du Sync suivi, s'il est sur une autre piste (bus, groupe)
     double sampleRate = 0.0;

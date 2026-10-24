@@ -3,7 +3,8 @@ cmake_minimum_required(VERSION 3.22)
 # --- Réglages ----------------------------------------------------------------
 set(OSC_COMPANY_NAME "Phragma")                  # nom affiché comme éditeur dans le DAW
 # -----------------------------------------------------------------------------
-# Deux plugins : Oscilloscope (l'afficheur) et Oscilloscope Sync (la sonde à mettre en tête de piste).
+# Trois plugins : Oscilloscope (l'afficheur), Oscilloscope Sync (la sonde à mettre en tête de piste)
+# et Oscilloscope Sync Instrument (la sonde pour une piste d'instrument : charge l'instrument dedans).
 # Ne changer ni PLUGIN_MANUFACTURER_CODE ni PLUGIN_CODE : ce sont eux (et pas le nom)
 # qui permettent aux DAW de retrouver les plugins dans les projets.
 
@@ -16,7 +17,7 @@ endif()
 # Windows : runtime C++ lié en statique -> aucun "Visual C++ Redistributable" à installer
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-project(Oscilloscope VERSION 0.1.0 LANGUAGES C CXX)
+project(Oscilloscope VERSION 0.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -147,6 +148,36 @@ target_link_libraries(OscilloscopeSync
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags)
 
+# --- Oscilloscope Sync Instrument --------------------------------------------
+# Instrument qui en charge un autre (VST3) pour connaître et déclarer sa latence.
+juce_add_plugin(OscilloscopeSyncInstrument
+    PRODUCT_NAME                "Oscilloscope Sync Instrument"
+    COMPANY_NAME                "${OSC_COMPANY_NAME}"
+    BUNDLE_ID                   "com.phragma.oscilloscopesyncinstrument"
+    PLUGIN_MANUFACTURER_CODE    Phrg
+    PLUGIN_CODE                 Osci
+    FORMATS                     VST3
+    VST3_CATEGORIES             Instrument
+    IS_SYNTH                    TRUE
+    NEEDS_MIDI_INPUT            TRUE
+    NEEDS_MIDI_OUTPUT           FALSE
+    IS_MIDI_EFFECT              FALSE
+    EDITOR_WANTS_KEYBOARD_FOCUS TRUE
+    COPY_PLUGIN_AFTER_BUILD     FALSE)
+
+target_sources(OscilloscopeSyncInstrument PRIVATE
+    Source/HubPlatform.cpp
+    Source/Look.cpp
+    Source/HostProcessor.cpp)
+target_compile_definitions(OscilloscopeSyncInstrument PUBLIC ${OSC_COMMON_DEFINITIONS} JUCE_PLUGINHOST_VST3=1)
+target_link_libraries(OscilloscopeSyncInstrument
+    PRIVATE
+        juce::juce_audio_processors
+        OscilloscopeAssets
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags)
+
 # --- Tests (optionnels) ------------------------------------------------------
 if(OSC_BUILD_TESTS)
     enable_testing()
@@ -164,8 +195,10 @@ if(OSC_BUILD_TESTS)
         Source/Look.cpp
         Source/ScopeProcessor.cpp
         Source/ScopeEditor.cpp
-        Source/SyncProcessor.cpp)
+        Source/SyncProcessor.cpp
+        Source/HostProcessor.cpp)
     target_compile_definitions(OscilloscopePluginTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_MODAL_LOOPS_PERMITTED=1 OSC_TESTS=1
+        JUCE_PLUGINHOST_VST3=1 OSC_TEST_SYNTH_DIR="${CMAKE_BINARY_DIR}/OscTestSynth_artefacts/$<CONFIG>/VST3"
         OSC_VERSION="${PROJECT_VERSION}")
     target_link_libraries(OscilloscopePluginTests PRIVATE
         juce::juce_audio_processors
@@ -173,4 +206,19 @@ if(OSC_BUILD_TESTS)
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags)
     add_test(NAME plugin COMMAND OscilloscopePluginTests)
+
+    # Instrument de test (latence 110) chargé par les tests dans Oscilloscope Sync Instrument
+    juce_add_plugin(OscTestSynth
+        PRODUCT_NAME                "OscTestSynth"
+        COMPANY_NAME                "PhragmaTests"
+        PLUGIN_MANUFACTURER_CODE    PhrT
+        PLUGIN_CODE                 OsTs
+        FORMATS                     VST3
+        IS_SYNTH                    TRUE
+        NEEDS_MIDI_INPUT            TRUE
+        COPY_PLUGIN_AFTER_BUILD     FALSE)
+    target_sources(OscTestSynth PRIVATE Tests/TestSynth.cpp)
+    target_compile_definitions(OscTestSynth PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
+    target_link_libraries(OscTestSynth PRIVATE juce::juce_audio_processors PUBLIC juce::juce_recommended_config_flags)
+    add_dependencies(OscilloscopePluginTests OscTestSynth_VST3)
 endif()

@@ -20,6 +20,7 @@ defaults:
 env:
   SCOPE_PATH: build/Oscilloscope_artefacts/Release/VST3/Oscilloscope.vst3
   SYNC_PATH: build/OscilloscopeSync_artefacts/Release/VST3/Oscilloscope Sync.vst3
+  INST_PATH: build/OscilloscopeSyncInstrument_artefacts/Release/VST3/Oscilloscope Sync Instrument.vst3
 
 jobs:
   build:
@@ -43,7 +44,7 @@ jobs:
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DOSC_BUILD_TESTS=ON
 
       - name: Build
-        run: cmake --build build --config Release --target Oscilloscope_VST3 OscilloscopeSync_VST3 OscilloscopeEngineTests --parallel 4
+        run: cmake --build build --config Release --target Oscilloscope_VST3 OscilloscopeSync_VST3 OscilloscopeSyncInstrument_VST3 OscilloscopeEngineTests --parallel 4
 
       - name: Test du moteur
         run: ctest --test-dir build -C Release -R engine --output-on-failure
@@ -53,19 +54,20 @@ jobs:
         run: |
           lipo -archs "$SCOPE_PATH/Contents/MacOS/Oscilloscope"
           lipo -archs "$SYNC_PATH/Contents/MacOS/Oscilloscope Sync"
-          for p in "$SCOPE_PATH" "$SYNC_PATH"; do
+          lipo -archs "$INST_PATH/Contents/MacOS/Oscilloscope Sync Instrument"
+          for p in "$SCOPE_PATH" "$SYNC_PATH" "$INST_PATH"; do
             codesign --force --deep --sign - "$p"
             codesign --verify --deep --strict "$p"
           done
           mkdir dist
-          cp -R "$SCOPE_PATH" "$SYNC_PATH" dist/
+          cp -R "$SCOPE_PATH" "$SYNC_PATH" "$INST_PATH" dist/
           (cd dist && zip -r -q ../Oscilloscope-macOS.zip .)
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         run: |
           mkdir dist
-          cp -R "$SCOPE_PATH" "$SYNC_PATH" dist/
+          cp -R "$SCOPE_PATH" "$SYNC_PATH" "$INST_PATH" dist/
           (cd dist && 7z a -tzip ../Oscilloscope-Windows.zip . > /dev/null)
 
       - name: Upload
@@ -87,3 +89,4 @@ jobs:
           fi
           "$PLUGINVAL" --strictness-level 10 --validate-in-process --validate "$SCOPE_PATH"
           "$PLUGINVAL" --strictness-level 10 --validate-in-process --validate "$SYNC_PATH"
+          "$PLUGINVAL" --strictness-level 10 --validate-in-process --validate "$INST_PATH"

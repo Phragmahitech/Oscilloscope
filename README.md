@@ -2,10 +2,11 @@
 
 Oscilloscope VST3 multi-pistes, calé sur le tempo, qui compense automatiquement la latence des plugins de la piste.
 
-Deux plugins :
+Trois plugins :
 
 - **Oscilloscope** : à mettre où on veut regarder (en général en fin de chaîne). Chaque fenêtre montre toutes les instances du projet. Chaque nouvelle instance reçoit une couleur différente.
 - **Oscilloscope Sync** : à mettre **en premier** sur la piste. Il ne touche pas au son. L'Oscilloscope de la même piste compare ce que le Sync reçoit avec ce qu'il reçoit lui-même et en déduit, à l'échantillon près, le retard des plugins placés entre les deux. La mesure tourne en continu : ajouter ou retirer un plugin à latence est pris en compte en une à deux secondes. Sans Sync sur la piste, la trace n'est pas compensée.
+- **Oscilloscope Sync Instrument** : pour une piste d'instrument. Un effet ne peut pas se placer avant l'instrument, donc la latence de l'instrument lui-même (Kick3 : 110 échantillons) échappe au Sync. On met Oscilloscope Sync Instrument à la place de l'instrument et on charge l'instrument dedans (LOAD INSTRUMENT : liste des VST3 installés, ou BROWSE). Il lui passe le MIDI, montre sa fenêtre, lit sa latence, la déclare à Live (la compensation de Live reste juste) et l'Oscilloscope l'ajoute à ce qu'il mesure après. Les paramètres automatisables de l'instrument (128 au plus, sans Bypass) sont relayés pour l'automation de Live (P1… renommés d'après l'instrument). Le réglage et l'état de l'instrument sont enregistrés avec le projet ; si l'instrument est introuvable à l'ouverture, un message s'affiche et son état est conservé.
 
 Réglages de la fenêtre :
 

@@ -6,6 +6,7 @@
 #include "../Source/ScopeEditor.h"
 #include "../Source/SyncProcessor.h"
 #include "../Source/Names.h"
+#include "../Source/HostProcessor.h"
 
 #include <cstdio>
 #include <random>
@@ -446,16 +447,205 @@ namespace
         fresh (editor);
         CHECK (true, "valeurs non finies");
     }
+    //==========================================================================
+    void testInstrumentHost()
+    {
+        std::printf ("Oscilloscope Sync Instrument\n");
+        const auto synthFile = juce::File (OSC_TEST_SYNTH_DIR).getChildFile ("OscTestSynth.vst3");
+        CHECK (synthFile.exists(), "instrument de test introuvable : %s", synthFile.getFullPathName().toRawUTF8());
+
+        auto host = std::make_unique<HostProcessor>();
+        host->setRateAndBufferSizeDetails (sampleRate, blockSize);
+        host->prepareToPlay (sampleRate, blockSize);
+        CHECK (host->getLatencySamples() == 0 && host->getInner() == nullptr, "vide au départ");
+
+        juce::String error;
+        CHECK (host->loadFile (synthFile, error), "chargement : %s", error.toRawUTF8());
+        CHECK (host->getInnerName() == "OscTestSynth", "nom %s", host->getInnerName().toRawUTF8());
+        CHECK (host->getInnerLatency() == 110 && host->getLatencySamples() == 110, "latence déclarée %d / %d", host->getInnerLatency(), host->getLatencySamples());
+        CHECK (host->getHub()->slots[host->getSlotIndex()].sourceLatency.load() == 110, "latence dans le hub");
+        CHECK (host->getParameters()[0]->getName (64) == "Gain" && host->getParameters()[1]->getName (64) == "Latency"
+               && host->getParameters()[2]->getName (64) == "P3", "noms des paramètres relayés : %s, %s, %s (%d dans l instrument)", host->getParameters()[0]->getName (64).toRawUTF8(), host->getParameters()[1]->getName (64).toRawUTF8(), host->getParameters()[2]->getName (64).toRawUTF8(), host->getInner()->getParameters().size());
+
+        // On ne peut pas se charger soi-même
+        {
+            juce::PluginDescription self;
+            self.name = "Oscilloscope Sync Instrument";
+            self.manufacturerName = "Phragma";
+            juce::String e2;
+            CHECK (! host->loadPlugin (self, e2) && host->getInnerName() == "OscTestSynth", "refus de se charger soi-même");
+        }
+
+        // Piste : [Sync Instrument (instrument de test)] -> effet qui retarde de 300 -> [Oscilloscope]
+        auto scope = std::make_unique<ScopeProcessor>();
+        scope->setRateAndBufferSizeDetails (sampleRate, blockSize);
+        scope->prepareToPlay (sampleRate, blockSize);
+        FakePlayHead head;
+        host->setPlayHead (&head);
+        scope->setPlayHead (&head);
+
+        std::vector<float> line (2048, 0.0f);
+        size_t linePos = 0;
+        int fxLag = 300;
+        const double sixteenth = sampleRate * 60.0 / bpm / 4.0;
+        int noteCounter = 0;
+
+        auto run = [&] (double seconds)
+        {
+            double since = 0.0;
+            for (int b = 0; b < (int) (seconds * sampleRate / blockSize); ++b)
+            {
+                juce::AudioBuffer<float> buffer (2, blockSize);
+                juce::MidiBuffer midi;
+                for (int i = 0; i < blockSize; ++i)
+                {
+                    const int64_t at = head.position + i;
+                    // un kick à chaque temps, des notes en plus sur certaines doubles-croches
+                    const int64_t step = (int64_t) std::floor ((double) at / sixteenth);
+                    if ((int64_t) std::floor ((double) (at - 1) / sixteenth) != step && (step % 4 == 0 || (step * 7 + noteCounter) % 5 == 0))
+                    {
+                        midi.addEvent (juce::MidiMessage::noteOn (1, 36, 1.0f), i);
+                        ++noteCounter;
+                    }
+                }
+                host->processBlock (buffer, midi);
+                for (int i = 0; i < blockSize; ++i)
+                    for (int c = 0; c < 2; ++c)
+                    {
+                        float& cell = line[((linePos + (size_t) i) % (size_t) fxLag) * 1];
+                        if (c == 0)
+                        {
+                            const float out = cell;
+                            cell = buffer.getSample (0, i);
+                            buffer.setSample (0, i, out);
+                        }
+                        else
+                            buffer.setSample (1, i, buffer.getSample (0, i));
+                    }
+                linePos = (linePos + blockSize) % (size_t) fxLag;
+                scope->processBlock (buffer, midi);
+                head.position += blockSize;
+                since += (double) blockSize / sampleRate;
+                if (since >= 0.2)
+                {
+                    since = 0.0;
+                    host->refreshLatencyNow();
+                    scope->measureNow();
+                }
+            }
+        };
+
+        run (3.0);
+        CHECK (scope->getSlot()->latency.load() == 410, "kick 110 + effet 300 : %d (état %d)", scope->getSlot()->latency.load(), scope->getSlot()->latencyState.load());
+        CHECK (scope->getSlot()->pairedSourceLatency.load() == 110, "part de l'instrument");
+
+        // L'instrument change de latence (réglage interne) : relayé par le paramètre P2
+        auto* latencyProxy = host->getParameters()[1];
+        auto* innerLatencyParam = host->getInner()->getParameters()[1];
+        latencyProxy->setValueNotifyingHost (innerLatencyParam->getValueForText ("500"));
+        run (0.6);
+        CHECK (host->getLatencySamples() == 500, "nouvelle latence déclarée : %d", host->getLatencySamples());
+        CHECK (scope->getSlot()->latency.load() == 800, "500 + 300 : %d", scope->getSlot()->latency.load());
+
+        // Un réglage tourné dans la fenêtre de l'instrument remonte vers l'hôte (automation)
+        {
+            struct Watch final : juce::AudioProcessorParameter::Listener
+            {
+                float last = -1.0f;
+                void parameterValueChanged (int, float v) override   { last = v; }
+                void parameterGestureChanged (int, bool) override   {}
+            } watch;
+            auto* gainProxy = host->getParameters()[0];
+            gainProxy->addListener (&watch);
+            host->getInner()->getParameters()[0]->setValueNotifyingHost (0.25f);
+            CHECK (std::abs (gainProxy->getValue() - 0.25f) < 1e-4f && std::abs (watch.last - 0.25f) < 1e-4f, "geste relayé (%g, %g)", gainProxy->getValue(), watch.last);
+            // l'écho de l'hôte ne repart pas vers lui
+            watch.last = -1.0f;
+            gainProxy->setValue (0.25f);
+            run (0.05);
+            CHECK (watch.last < 0.0f, "pas d'écho");
+            gainProxy->removeListener (&watch);
+        }
+
+        // Fenêtre : l'instrument est dedans
+        {
+            std::unique_ptr<juce::AudioProcessorEditor> base (host->createEditor());
+            auto* editor = dynamic_cast<HostEditor*> (base.get());
+            CHECK (editor != nullptr && editor->getInnerEditor() != nullptr, "fenêtre de l'instrument intégrée");
+            if (editor != nullptr && editor->getInnerEditor() != nullptr)
+            {
+                CHECK (editor->getHeight() == HostEditor::headerHeight + editor->getInnerEditor()->getHeight(), "hauteur");
+                const auto lines = editor->describe();
+                CHECK (lines.size() == 1 && lines[0].contains ("800 smp"), "suivi : %s", lines.joinIntoString (" / ").toRawUTF8());
+                snapshot (*editor, "sync-instrument");
+
+                // Changer d'instrument avec la fenêtre ouverte
+                juce::String e3;
+                CHECK (host->loadFile (synthFile, e3), "rechargement fenêtre ouverte");
+                CHECK (editor->getInnerEditor() != nullptr && dynamic_cast<juce::AudioProcessorEditor*> (editor->getInnerEditor())->getAudioProcessor() == host->getInner(), "fenêtre reconstruite");
+            }
+        }
+
+        // État : instrument + ses réglages
+        host->getInner()->getParameters()[1]->setValueNotifyingHost (innerLatencyParam == nullptr ? 0.0f : host->getInner()->getParameters()[1]->getValueForText ("777"));
+        run (0.1);
+        juce::MemoryBlock state;
+        host->getStateInformation (state);
+
+        HostProcessor reloaded;
+        reloaded.setRateAndBufferSizeDetails (sampleRate, blockSize);
+        reloaded.prepareToPlay (sampleRate, blockSize);
+        reloaded.setStateInformation (state.getData(), (int) state.getSize());
+        CHECK (reloaded.getInnerName() == "OscTestSynth" && reloaded.getLatencySamples() == 777, "état relu : %s, %d",
+               reloaded.getInnerName().toRawUTF8(), reloaded.getLatencySamples());
+
+        // Instrument introuvable : message, et l'état est gardé tel quel
+        {
+            auto text = juce::String::fromUTF8 ((const char*) state.getData() + 8, (int) state.getSize() - 8);
+            auto xml = juce::AudioProcessor::getXmlFromBinary (state.getData(), (int) state.getSize());
+            CHECK (xml != nullptr, "xml");
+            if (xml != nullptr)
+            {
+                if (auto* plugin = xml->getChildByName ("PLUGIN"))
+                    plugin->setAttribute ("file", "/nowhere/Missing.vst3");
+                juce::MemoryBlock broken;
+                juce::AudioProcessor::copyXmlToBinary (*xml, broken);
+                HostProcessor lost;
+                lost.setStateInformation (broken.getData(), (int) broken.getSize());
+                CHECK (lost.getInner() == nullptr && lost.getLoadError().isNotEmpty(), "message : %s", lost.getLoadError().toRawUTF8());
+                juce::MemoryBlock again;
+                lost.getStateInformation (again);
+                auto xml2 = juce::AudioProcessor::getXmlFromBinary (again.getData(), (int) again.getSize());
+                CHECK (xml2 != nullptr && xml2->getChildByName ("PLUGIN") != nullptr
+                       && xml2->getChildByName ("PLUGIN")->getStringAttribute ("file") == "/nowhere/Missing.vst3", "état gardé");
+            }
+            (void) text;
+        }
+
+        // Retirer l'instrument
+        host->unloadPlugin();
+        CHECK (host->getInner() == nullptr && host->getLatencySamples() == 0 && host->getParameters()[0]->getName (64) == "P1", "retiré");
+        run (0.1);   // silence, rien ne casse
+
+        // Liste des .vst3 (dossier supplémentaire des tests)
+        const auto files = HostProcessor::findVst3Files();
+        bool listed = false;
+        for (auto& f : files)
+            listed = listed || f.getFileName() == "OscTestSynth.vst3";
+        CHECK (listed, "instrument de test dans la liste (%d fichiers)", files.size());
+    }
 }
 
 int main()
 {
     juce::ScopedJuceInitialiser_GUI gui;
+    setenv ("OSC_EXTRA_VST3_DIR", OSC_TEST_SYNTH_DIR, 1);
 
     testParametersAndDefaults();
     testLatency();
     testColoursAndState();
     testEditor();
+    testInstrumentHost();
 
     std::printf ("\n%d vérifications, %d échec(s)\n", checks, failures);
     return failures == 0 ? 0 : 1;

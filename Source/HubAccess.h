@@ -31,7 +31,7 @@ namespace osc
         if (cached != nullptr)
             return cached;
 
-        const char* variable = "PHRAGMA_OSCILLOSCOPE_HUB_1";
+        const char* variable = "PHRAGMA_OSCILLOSCOPE_HUB_2";
         const unsigned long long pid = currentProcessId();
 
         juce::InterProcessLock lock ("PhragmaOscilloscopeHub_" + juce::String ((juce::int64) pid));

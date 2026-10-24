@@ -142,7 +142,7 @@ void TrackList::setTracks (const std::vector<TrackInfo>& t)
         const auto& a = t[i];
         const auto& b = tracks[i];
         changed = a.index != b.index || a.generation != b.generation || a.name != b.name || a.colour != b.colour
-               || a.active != b.active || a.hidden != b.hidden || a.latency != b.latency
+               || a.active != b.active || a.hidden != b.hidden || a.latency != b.latency || a.sourceLatency != b.sourceLatency
                || a.latencyState != b.latencyState || a.pairedName != b.pairedName;
     }
 
@@ -178,6 +178,8 @@ juce::String TrackList::statusText (const TrackInfo& t) const
     }
 
     auto s = t.latency == 0 ? juce::String ("SYNC" + middleDot() + "NO LATENCY") : "COMP " + lat;
+    if (t.sourceLatency > 0)
+        s << middleDot() << "INSTR " << t.sourceLatency;
     if (t.pairedName.isNotEmpty())
         s << middleDot() << "VIA " << t.pairedName.toUpperCase();
     return s;
@@ -685,6 +687,7 @@ std::vector<TrackInfo> ScopeEditor::readTracks() const
         t.active = s.isActive (now) && s.sampleRate.load() > 0.0;
         t.hidden = s.hasFlag (osc::flags::hidden);
         t.latency = s.latency.load();
+        t.sourceLatency = s.pairedSourceLatency.load();
         t.latencyState = (osc::LatencyState) s.latencyState.load();
         t.sampleRate = s.sampleRate.load();
 
